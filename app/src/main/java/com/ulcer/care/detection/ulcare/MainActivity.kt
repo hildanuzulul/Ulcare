@@ -119,9 +119,9 @@ class MainActivity : ComponentActivity() {
                         startActivity(
                             ConfirmImageActivity.newIntent(
                                 context = this@MainActivity,
-                                imageUri = uri
-                                // kalau ConfirmImageActivity menerima nama & gender, kirimkan juga di sini
-                                // .putExtra(...) versi builder sesuai implementasi kamu
+                                imageUri = uri,
+                                patientName = patientName,
+                                patientGender = patientGender
                             )
                         )
                     },
