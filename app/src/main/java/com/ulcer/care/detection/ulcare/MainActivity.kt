@@ -55,7 +55,9 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
-// ★ status bar control
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.compose.material3.Surface
+import androidx.compose.ui.graphics.Color.Companion.White
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
 
@@ -79,6 +81,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
 
         // Ambil data identitas (bila ada)
         patientName   = intent.getStringExtra(EXTRA_PATIENT_NAME)
@@ -104,31 +108,37 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
         cameraExecutor = Executors.newSingleThreadExecutor()
 
         setContent {
             // ★ Pakai ULCARETheme yang sudah kamu set agar SELALU LIGHT/PUTIH
             // (pastikan di Theme.kt kamu memaksa lightColorScheme, tanpa mengikuti system)
             ULCARETheme {
-                CameraScreen(
-                    onBackToIdentity = {
-                        startActivity(Intent(this@MainActivity, IdentityActivity::class.java))
-                        finish()
-                    },
-                    onOpenConfirm = { uri ->
-                        startActivity(
-                            ConfirmImageActivity.newIntent(
-                                context = this@MainActivity,
-                                imageUri = uri,
-                                patientName = patientName,
-                                patientGender = patientGender
+                Surface(
+                    modifier = Modifier.fillMaxSize(), // Pastikan seluruh area menggunakan Surface
+                    color = MaterialTheme.colorScheme.background // Latar belakang putih
+                ) {
+                    CameraScreen(
+                        onBackToIdentity = {
+                            startActivity(Intent(this@MainActivity, IdentityActivity::class.java))
+                            finish()
+                        },
+                        onOpenConfirm = { uri ->
+                            startActivity(
+                                ConfirmImageActivity.newIntent(
+                                    context = this@MainActivity,
+                                    imageUri = uri,
+                                    patientName = patientName,
+                                    patientGender = patientGender
+                                )
                             )
-                        )
-                    },
-                    onOpenAbout = {
-                        startActivity(Intent(this@MainActivity, AboutActivity::class.java))
-                    }
-                )
+                        },
+                        onOpenAbout = {
+                            startActivity(Intent(this@MainActivity, AboutActivity::class.java))
+                        }
+                    )
+                }
             }
         }
     }

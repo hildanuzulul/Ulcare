@@ -31,12 +31,19 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ElevatedCard
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import com.ulcer.care.detection.ulcare.ui.theme.ULCARETheme
 
 class AboutActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
 
         // ActionBar: judul & ikon back hitam, background putih
         val white = Color.parseColor("#FFFFFF")
@@ -85,11 +92,8 @@ class AboutActivity : AppCompatActivity() {
 }
 
 /* ------------ Konstanta konten ------------ */
-private const val DEV_LINE = "PR Kesmaszi BRIN - ITSK Soepraoen"
-private const val EMAIL_RIKA = "rika016@brin.go.id"
+private const val DEV_LINE = "BRIN x ITSK Soepraoen"
 private const val EMAIL_ANSHORI = "moanshori@itsk-soepraoen.ac.id"
-
-/* -------------------- UI -------------------- */
 
 @Composable
 fun AboutScreen() {
@@ -129,10 +133,38 @@ fun AboutScreen() {
                 style = MaterialTheme.typography.bodyLarge,
                 color = ComposeColor.Black
             )
-            Spacer(Modifier.height(4.dp))
-
-            ContactNameOnly(name = "Rika Rachmawati", emailTo = EMAIL_RIKA)
             ContactNameOnly(name = "Mochammad Anshori", emailTo = EMAIL_ANSHORI)
+
+            Spacer(Modifier.height(8.dp))
+            Divider()
+            Spacer(Modifier.height(8.dp))
+
+//            hubungi kami
+//            ElevatedCard(
+//                modifier = Modifier
+//                    .fillMaxWidth()
+//                    .clickable { openWhatsApp(context) } // Fungsi untuk membuka WhatsApp
+//                    .padding(16.dp),
+//                shape = RoundedCornerShape(8.dp)
+//            ) {
+//                Text(
+//                    text = "Hubungi Kami",
+//                    style = MaterialTheme.typography.bodyLarge,
+//                    color = MaterialTheme.colorScheme.primary,
+//                    modifier = Modifier.padding(16.dp),
+//                    fontWeight = FontWeight.SemiBold,
+//                    textAlign = TextAlign.Center
+//                )
+//            }
+
+            Text(
+                "Hubungi Kami",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .padding(vertical = 8.dp)
+                    .clickable { openWhatsApp(context) } // Call the function to open WhatsApp
+            )
 
             Spacer(Modifier.height(8.dp))
             Divider()
@@ -142,6 +174,10 @@ fun AboutScreen() {
             Text(
                 "Acknowledgment",
                 style = MaterialTheme.typography.bodyLarge,
+                color = ComposeColor.Black
+            )
+            Text("Kolaborasi Riset BRIN dengan ITSK Soepraoen",
+                style = MaterialTheme.typography.bodySmall,
                 color = ComposeColor.Black
             )
 
@@ -187,7 +223,17 @@ private fun openEmail(context: android.content.Context, email: String) {
     context.startActivity(Intent.createChooser(intent, "Kirim email ke $email"))
 }
 
-/* -------------------- Preview -------------------- */
+private fun openWhatsApp(context: android.content.Context) {
+    val phoneNumber = "6285258346842"
+    val text = "Hallo, saya ingin lebih tahu mengenai aplikasi ULCare"
+    val url = "https://api.whatsapp.com/send?phone=$phoneNumber&text=${Uri.encode(text)}"
+
+    val intent = Intent(Intent.ACTION_VIEW).apply {
+        data = Uri.parse(url)
+    }
+    context.startActivity(intent)
+}
+
 @Preview(showBackground = true)
 @Composable
 private fun PrevAbout() {

@@ -25,9 +25,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import coil.compose.rememberAsyncImagePainter
+import androidx.appcompat.app.AppCompatDelegate
 import com.ulcer.care.detection.ulcare.ui.theme.ULCARETheme
 
-/* ===== Intent Keys ===== */
 const val EXTRA_IMAGE_URI     = "extra_image_uri"
 const val EXTRA_CLASS         = "extra_class"       // dari ULCARE.tflite
 const val EXTRA_DETAILS       = "extra_details"     // boleh kosong -> akan diisi otomatis
@@ -74,6 +74,8 @@ class ResultActivityS : ComponentActivity() {
             mapDetailsAction(rawClass)
         } else passedDetails to passedAction
 
+        AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
+
         setContent {
             ULCARETheme {
                 ResultScreen(
@@ -90,10 +92,9 @@ class ResultActivityS : ComponentActivity() {
     }
 }
 
-/* ===================== Mapping ===================== */
 
 /**
- * Terima label dari model (contoh: "light", "light-medium", "Medium - Urgent", dsb)
+ * Label dari model (contoh: "light", "light-medium", "Medium - Urgent", dsb)
  * lalu kembalikan pair Details & Tindakan sesuai tabel yang diminta.
  */
 private fun mapDetailsAction(classificationRaw: String): Pair<String, String> {
@@ -191,6 +192,7 @@ private fun ResultScreen(
             modifier = Modifier
                 .padding(inner)
                 .padding(horizontal = 20.dp, vertical = 12.dp)
+                .background(MaterialTheme.colorScheme.background)  // Latar belakang putih
         ) {
             // ---- Preview gambar (rounded) ----
             item {
