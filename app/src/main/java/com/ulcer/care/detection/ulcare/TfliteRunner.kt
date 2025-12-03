@@ -8,44 +8,98 @@ import android.net.Uri
 import androidx.annotation.WorkerThread
 import org.tensorflow.lite.Interpreter
 import java.io.FileInputStream
+import java.io.InputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.MappedByteBuffer
 import java.nio.channels.FileChannel
+import kotlin.math.min
 
 data class TfResult(
-    val classification: String,  // label top-1 dari model
-    val details: String,         // dikosongkan (kita tidak menambah info di luar tflite)
-    val action: String,          // dikosongkan (idem)
-    val raw: FloatArray          // skor mentah dari output model
+    val classification: String,
+    val details: String,
+    val action: String,
+    val raw: FloatArray
 )
 
 object TfliteRunner {
 
-    private const val TAG = "ULCARE_TFLITE"
     private const val MODEL_FILE = "ULCARE.tflite"
+    private const val TAG = "ULCARE_TFLITE"
 
-    /* ======================== Image utils ======================== */
-
+    /**
+     * Decode gambar dengan sampling ringan.
+     * targetSize = ukuran sisi terpendek yang diinginkan (misal 256).
+     */
     @WorkerThread
-    fun decodeBitmapFromUri(context: Context, uri: Uri): Bitmap {
+    fun decodeBitmapSmall(
+        context: Context,
+        uri: Uri,
+        targetSize: Int = 256
+    ): Bitmap {
+        val resolver = context.contentResolver
+
         return if (android.os.Build.VERSION.SDK_INT >= 28) {
-            val src = ImageDecoder.createSource(context.contentResolver, uri)
-            ImageDecoder.decodeBitmap(src) { decoder, _, _ ->
+
+            val src = ImageDecoder.createSource(resolver, uri)
+            ImageDecoder.decodeBitmap(src) { decoder, info, _ ->
+                val (w, h) = info.size.width to info.size.height
+                val minSide = min(w, h)
+                val scale = targetSize / minSide.toFloat()
+
+                val targetW = (w * scale).toInt().coerceAtLeast(32)
+                val targetH = (h * scale).toInt().coerceAtLeast(32)
+
+                decoder.setTargetSize(targetW, targetH)
                 decoder.isMutableRequired = false
                 decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
             }
+
         } else {
-            context.contentResolver.openInputStream(uri).use { input ->
-                val opts = BitmapFactory.Options().apply {
-                    inPreferredConfig = Bitmap.Config.ARGB_8888
-                }
-                BitmapFactory.decodeStream(input, null, opts)
-                    ?: throw IllegalArgumentException("Gagal decode bitmap dari $uri")
+            // --- API < 28 ---
+            val optsBound = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            resolver.openInputStream(uri)?.use { input ->
+                BitmapFactory.decodeStream(input, null, optsBound)
             }
+
+            val (w, h) = optsBound.outWidth to optsBound.outHeight
+            if (w <= 0 || h <= 0)
+                throw IllegalArgumentException("Tidak bisa membaca ukuran gambar: $uri")
+
+            val sampleSize = computeInSampleSize(w, h, targetSize)
+
+            val opts = BitmapFactory.Options().apply {
+                inSampleSize = sampleSize
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            }
+
+            val bmp = resolver.openInputStream(uri)?.use { input ->
+                BitmapFactory.decodeStream(input, null, opts)
+            }
+
+            bmp ?: throw IllegalArgumentException("Gagal decode gambar dari $uri")
         }
     }
 
+
+    private fun computeInSampleSize(
+        srcW: Int,
+        srcH: Int,
+        targetSize: Int
+    ): Int {
+        var sample = 1
+        val minSide = min(srcW, srcH)
+        while (minSide / (sample * 2) >= targetSize) {
+            sample *= 2
+        }
+        return sample
+    }
+    //  INPUT CONVERSION
+
+    /**
+     * Konversi bitmap ke ByteBuffer float32.
+     * Bitmap harus SUDAH berukuran (dstWidth x dstHeight).
+     */
     @WorkerThread
     fun bitmapToFloatBuffer(
         src: Bitmap,
@@ -54,12 +108,12 @@ object TfliteRunner {
         mean: Float = 0f,
         std: Float = 255f
     ): ByteBuffer {
-        val scaled = Bitmap.createScaledBitmap(src, dstWidth, dstHeight, true)
+
         val buf = ByteBuffer.allocateDirect(4 * dstWidth * dstHeight * 3)
-            .order(ByteOrder.nativeOrder())
+        buf.order(ByteOrder.nativeOrder())
 
         val pixels = IntArray(dstWidth * dstHeight)
-        scaled.getPixels(pixels, 0, dstWidth, 0, 0, dstWidth, dstHeight)
+        src.getPixels(pixels, 0, dstWidth, 0, 0, dstWidth, dstHeight)
 
         var i = 0
         while (i < pixels.size) {
@@ -67,6 +121,7 @@ object TfliteRunner {
             val r = (p ushr 16) and 0xFF
             val g = (p ushr 8) and 0xFF
             val b = p and 0xFF
+
             buf.putFloat((r - mean) / std)
             buf.putFloat((g - mean) / std)
             buf.putFloat((b - mean) / std)
@@ -75,8 +130,7 @@ object TfliteRunner {
         buf.rewind()
         return buf
     }
-
-    /* Model loading */
+    //  LOAD MODEL (mmap)
 
     private fun mmapModel(context: Context): MappedByteBuffer {
         val afd = context.assets.openFd(MODEL_FILE)
@@ -84,35 +138,62 @@ object TfliteRunner {
             return fc.map(FileChannel.MapMode.READ_ONLY, afd.startOffset, afd.declaredLength)
         }
     }
+    //  INTERPRETER CACHE
 
-    /* Inference  */
+    private var cachedInterpreter: Interpreter? = null
+
+    @Synchronized
+    private fun getInterpreter(context: Context): Interpreter {
+        cachedInterpreter?.let { return it }
+
+        val mapped = mmapModel(context)
+        val opts = Interpreter.Options().apply {
+            setNumThreads(maxOf(1, Runtime.getRuntime().availableProcessors() / 2))
+        }
+
+        val interpreter = Interpreter(mapped, opts)
+        cachedInterpreter = interpreter
+        return interpreter
+    }
+
+    @Synchronized
+    fun closeInterpreter() {
+        try {
+            cachedInterpreter?.close()
+        } catch (_: Exception) {}
+        cachedInterpreter = null
+    }
+
+    //  RUN MODEL
 
     @WorkerThread
     fun runWithInterpreter(context: Context, bitmap: Bitmap): TfResult {
-        val mapped = mmapModel(context)
-        val interpreter = Interpreter(mapped)
+        val interpreter = getInterpreter(context)
 
-        // Asumsi input [1,H,W,3]
-        val inShape = interpreter.getInputTensor(0).shape()
-        val h = inShape.getOrNull(1) ?: 224
-        val w = inShape.getOrNull(2) ?: 224
+        // Ambil ukuran input dari model
+        val inShape = interpreter.getInputTensor(0).shape()  // [1, h, w, 3]
+        val ih = inShape.getOrNull(1) ?: 224
+        val iw = inShape.getOrNull(2) ?: 224
 
-        val inputBuffer = bitmapToFloatBuffer(bitmap, w, h)
+        // Paksa ukuran sesuai model
+        val resized = if (bitmap.width != iw || bitmap.height != ih) {
+            Bitmap.createScaledBitmap(bitmap, iw, ih, true)
+        } else bitmap
 
-        // Asumsi output tunggal: 5 skor kelas
+        // Buat input buffer
+        val input = bitmapToFloatBuffer(resized, iw, ih)
+
+        // Siapkan output array [1, num_classes]
         val outShape = interpreter.getOutputTensor(0).shape()
         val outSize = outShape.last()
-        val outBuf = ByteBuffer.allocateDirect(outSize * 4).order(ByteOrder.nativeOrder())
-        val outputs = hashMapOf<Int, Any>(0 to outBuf)
+        val outputArray = Array(1) { FloatArray(outSize) }
 
-        interpreter.runForMultipleInputsOutputs(arrayOf(inputBuffer), outputs)
+        // Jalankan inferensi
+        interpreter.run(input, outputArray)
 
-        outBuf.rewind()
-        val raw = FloatArray(outSize)
-        outBuf.asFloatBuffer().get(raw)
-        interpreter.close()
+        val raw = outputArray[0]
 
-        // Label urutan output model
+        // Label
         val labelList = listOf(
             "light",
             "light - medium",
@@ -121,6 +202,7 @@ object TfliteRunner {
             "urgent"
         )
 
+        // Ambil kelas terbaik
         val bestIdx = raw.indices.maxByOrNull { raw[it] } ?: -1
         val classification = labelList.getOrElse(bestIdx) { "Unknown" }
 
@@ -131,76 +213,27 @@ object TfliteRunner {
             raw = raw
         )
     }
-
-    /* ======================== DEBUG: log IO model ====== ================== */
+    //  DEBUG
 
     @WorkerThread
     fun debugLogModelIO(context: Context) {
         val mapped = mmapModel(context)
         val interpreter = Interpreter(mapped)
 
-        // Input tensors
         val inCount = interpreter.inputTensorCount
-        android.util.Log.d(TAG, "INPUT count = $inCount")
+        android.util.Log.d(TAG, "INPUT COUNT = $inCount")
         for (i in 0 until inCount) {
             val t = interpreter.getInputTensor(i)
-            val shape = t.shape().contentToString()
-            val q = t.quantizationParams()
-            android.util.Log.d(
-                TAG,
-                "in#$i type=${t.dataType()} shape=$shape quant(scale=${q.scale}, zp=${q.zeroPoint})"
-            )
+            android.util.Log.d(TAG, "INPUT[$i] shape=${t.shape().contentToString()} type=${t.dataType()}")
         }
 
-        // Output tensors
         val outCount = interpreter.outputTensorCount
-        android.util.Log.d(TAG, "OUTPUT count = $outCount")
+        android.util.Log.d(TAG, "OUTPUT COUNT = $outCount")
         for (i in 0 until outCount) {
             val t = interpreter.getOutputTensor(i)
-            val shape = t.shape().contentToString()
-            val q = t.quantizationParams()
-            android.util.Log.d(
-                TAG,
-                "out#$i type=${t.dataType()} shape=$shape numBytes=${t.numBytes()} quant(scale=${q.scale}, zp=${q.zeroPoint})"
-            )
+            android.util.Log.d(TAG, "OUTPUT[$i] shape=${t.shape().contentToString()} type=${t.dataType()}")
         }
 
-        // Opsional: jalankan dummy inference untuk sample nilai float
-        try {
-            val inShape = interpreter.getInputTensor(0).shape()
-            val h = inShape.getOrNull(1) ?: 224
-            val w = inShape.getOrNull(2) ?: 224
-            val dummy = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-            val inBuf = bitmapToFloatBuffer(dummy, w, h)
-
-            val outputs = HashMap<Int, Any>()
-            for (i in 0 until outCount) {
-                val t = interpreter.getOutputTensor(i)
-                if (t.dataType() == org.tensorflow.lite.DataType.FLOAT32) {
-                    val outBuf = ByteBuffer.allocateDirect(t.numBytes()).order(ByteOrder.nativeOrder())
-                    outputs[i] = outBuf
-                } else {
-                    android.util.Log.d(TAG, "out#$i non-float; skip sample values")
-                }
-            }
-            interpreter.runForMultipleInputsOutputs(arrayOf(inBuf), outputs)
-
-            for (i in 0 until outCount) {
-                val any = outputs[i] ?: continue
-                if (any is ByteBuffer) {
-                    any.rewind()
-                    val fb = any.asFloatBuffer()
-                    val n = fb.remaining()
-                    val sampleCount = minOf(10, n)
-                    val arr = FloatArray(sampleCount)
-                    fb.get(arr)
-                    android.util.Log.d(TAG, "out#$i first $sampleCount values = ${arr.contentToString()}")
-                }
-            }
-        } catch (e: Throwable) {
-            android.util.Log.w(TAG, "Skip dummy inference preview: ${e.message}")
-        } finally {
-            interpreter.close()
-        }
+        interpreter.close()
     }
 }

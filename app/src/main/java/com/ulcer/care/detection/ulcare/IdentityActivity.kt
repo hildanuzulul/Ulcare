@@ -10,7 +10,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
-import androidx.compose.material3.RadioButtonDefaults.colors
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -171,8 +170,15 @@ private fun IdentityScreen(
             Button(
                 onClick = {
                     when {
-                        name.isBlank() -> error = "Nama wajib diisi."
-                        gender == null -> error = "Pilih jenis kelamin."
+                        name.isBlank() ->
+                            error = "Nama wajib diisi."
+
+                        !name.matches(Regex("^[a-zA-Z\\p{L}\\s]+$")) ->
+                            error = "Nama hanya boleh berisi huruf."
+
+                        gender == null ->
+                            error = "Pilih jenis kelamin."
+
                         else -> {
                             error = null
                             onSubmit(name.trim(), gender!!)

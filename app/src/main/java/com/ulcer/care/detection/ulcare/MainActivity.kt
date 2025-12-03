@@ -3,8 +3,6 @@
 package com.ulcer.care.detection.ulcare
 
 import android.Manifest
-import android.app.Activity
-import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -13,6 +11,7 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
@@ -48,7 +47,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.github.dhaval2404.imagepicker.ImagePicker
 import com.ulcer.care.detection.ulcare.ui.theme.ULCARETheme
 import java.io.File
 import java.text.SimpleDateFormat
@@ -57,14 +55,13 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.material3.Surface
-import androidx.compose.ui.graphics.Color.Companion.White
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
 
 class MainActivity : ComponentActivity() {
 
     companion object {
-        const val EXTRA_PATIENT_NAME   = "extra_patient_name"
+        const val EXTRA_PATIENT_NAME = "extra_patient_name"
         const val EXTRA_PATIENT_GENDER = "extra_patient_gender" // "L" / "P"
     }
 
@@ -73,6 +70,7 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var cameraExecutor: ExecutorService
 
+    // Permission launchers (didefinisikan di class-level agar lifecycle-safe)
     private val cameraPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* no-op */ }
 
@@ -82,13 +80,14 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Pastikan tema selalu light (kamu memang menginginkan UI kamera terang)
         AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
 
         // Ambil data identitas (bila ada)
-        patientName   = intent.getStringExtra(EXTRA_PATIENT_NAME)
+        patientName = intent.getStringExtra(EXTRA_PATIENT_NAME)
         patientGender = intent.getStringExtra(EXTRA_PATIENT_GENDER)
 
-        // ★ Paksa status bar "tetap terang" tetapi ikon PUTIH (karena kamera gelap)
+        // Paksa status bar "terang", namun ikon putih (karena preview kamera gelap)
         WindowCompat.setDecorFitsSystemWindows(window, true)
         WindowInsetsControllerCompat(window, window.decorView).isAppearanceLightStatusBars = false
 
@@ -108,16 +107,14 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
         cameraExecutor = Executors.newSingleThreadExecutor()
 
         setContent {
-            // ★ Pakai ULCARETheme yang sudah kamu set agar SELALU LIGHT/PUTIH
-            // (pastikan di Theme.kt kamu memaksa lightColorScheme, tanpa mengikuti system)
+            // Pakai ULCARETheme yang kamu punya (pastikan Theme.kt memaksa lightColorScheme)
             ULCARETheme {
                 Surface(
-                    modifier = Modifier.fillMaxSize(), // Pastikan seluruh area menggunakan Surface
-                    color = MaterialTheme.colorScheme.background // Latar belakang putih
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
                 ) {
                     CameraScreen(
                         onBackToIdentity = {
@@ -149,7 +146,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-//  UI
+// ---------------- UI ----------------
 
 @Composable
 fun CameraScreen(
@@ -166,28 +163,27 @@ fun CameraScreen(
     var camera by remember { mutableStateOf<Camera?>(null) }
     val previewView = remember { PreviewView(context) }
 
-    val galleryLauncher =
-        rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-            val uri: Uri? = result.data?.data
-            if (result.resultCode == Activity.RESULT_OK && uri != null) {
-                onOpenConfirm(uri)
-            }
-        }
+    // Gunakan ActivityResult API modern untuk pick media (lebih cepat & tidak compress diam-diam)
+    val galleryLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) onOpenConfirm(uri)
+    }
 
     LaunchedEffect(Unit) {
-        val cameraProvider = cameraProviderFuture.get()
-
-        val preview = androidx.camera.core.Preview.Builder().build().also {
-            it.setSurfaceProvider(previewView.surfaceProvider)
-        }
-
-        val selector = CameraSelector.DEFAULT_BACK_CAMERA
-
-        val capture = ImageCapture.Builder()
-            .setFlashMode(if (flashOn) FLASH_MODE_ON else FLASH_MODE_OFF)
-            .build()
-
         try {
+            val cameraProvider = cameraProviderFuture.get()
+
+            val preview = androidx.camera.core.Preview.Builder().build().also {
+                it.setSurfaceProvider(previewView.surfaceProvider)
+            }
+
+            val selector = CameraSelector.DEFAULT_BACK_CAMERA
+
+            val capture = ImageCapture.Builder()
+                .setFlashMode(if (flashOn) FLASH_MODE_ON else FLASH_MODE_OFF)
+                .build()
+
             cameraProvider.unbindAll()
             camera = cameraProvider.bindToLifecycle(
                 lifecycleOwner,
@@ -196,7 +192,10 @@ fun CameraScreen(
                 capture
             )
             imageCapture = capture
-        } catch (_: Exception) { /* no-op */ }
+        } catch (e: Exception) {
+            // Tangani kesalahan CameraX (mis. permission atau unavailable)
+            Log.w("ULCARE_CAMERA", "Camera bind failed: ${e.message}")
+        }
     }
 
     LaunchedEffect(flashOn) {
@@ -245,10 +244,10 @@ fun CameraScreen(
         // Bottom controls: Gallery + Capture
         BottomBar(
             onGallery = {
-                ImagePicker.with(context as ComponentActivity)
-                    .galleryOnly()
-                    .compress(1024)
-                    .createIntent { intent -> galleryLauncher.launch(intent) }
+                // Launch pick visual media (hanya gambar)
+                galleryLauncher.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                )
             },
             onCapture = {
                 val ic = imageCapture ?: return@BottomBar

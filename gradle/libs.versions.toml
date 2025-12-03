@@ -21,7 +21,7 @@ camerax = "1.5.1"
 imagepicker = "2.1"
 coil = "2.7.0"
 ucrop = "2.2.8"
-tflite = "2.14.0"
+tflite = "2.16.1"
 tfliteSupport = "0.4.4"
 tensorflowLiteMetadata = "0.5.0"
 

@@ -26,6 +26,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import coil.compose.rememberAsyncImagePainter
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.compose.ui.graphics.Color
 import com.ulcer.care.detection.ulcare.ui.theme.ULCARETheme
 
 const val EXTRA_IMAGE_URI     = "extra_image_uri"
@@ -77,7 +78,16 @@ class ResultActivityS : ComponentActivity() {
         AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
 
         setContent {
-            ULCARETheme {
+            MaterialTheme(
+                colorScheme = lightColorScheme(
+                    primary = Color.White,
+                    onPrimary = Color.Black,
+                    background = Color.White,
+                    onBackground = Color.Black,
+                    surface = Color.White,
+                    onSurface = Color.Black
+                )
+            ) {
                 ResultScreen(
                     imageUri       = imageUri,
                     classification = prettyClass,

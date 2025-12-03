@@ -19,11 +19,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.lifecycleScope
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.ulcer.care.detection.ulcare.tflite.TfliteRunner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -84,7 +85,7 @@ class ConfirmImageActivity : AppCompatActivity() {
             try {
                 // Decode bitmap di IO thread
                 val bmp = withContext(Dispatchers.IO) {
-                    TfliteRunner.decodeBitmapFromUri(this@ConfirmImageActivity, imageUri)
+                    TfliteRunner.decodeBitmapSmall(this@ConfirmImageActivity, imageUri)
                 }
 
                 // Jalankan model ULCARE.tflite (interpreter manual)
@@ -178,13 +179,12 @@ private fun ConfirmScreen(
         ) {
             if (imageUri != null) {
                 AsyncImage(
-                    model = imageUri,
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(imageUri)
+                        .size(1080) // batasi agar ringan
+                        .build(),
                     contentDescription = "Preview",
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .fillMaxHeight()
-                        .navigationBarsPadding()
+                    contentScale = ContentScale.Fit
                 )
             } else {
                 Text("Gambar tidak ditemukan")

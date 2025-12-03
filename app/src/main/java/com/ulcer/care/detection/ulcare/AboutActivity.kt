@@ -94,11 +94,12 @@ class AboutActivity : AppCompatActivity() {
 /* ------------ Konstanta konten ------------ */
 private const val DEV_LINE = "BRIN x ITSK Soepraoen"
 private const val EMAIL_ANSHORI = "moanshori@itsk-soepraoen.ac.id"
+private const val EMAIL_RIKA = "rika016@brin.go.id"
 
 @Composable
 fun AboutScreen() {
     val context = LocalContext.current
-    val versionName = remember {
+    val versionName = remember  {
         runCatching {
             @Suppress("DEPRECATION")
             context.packageManager.getPackageInfo(context.packageName, 0).versionName
@@ -133,7 +134,8 @@ fun AboutScreen() {
                 style = MaterialTheme.typography.bodyLarge,
                 color = ComposeColor.Black
             )
-            ContactNameOnly(name = "Mochammad Anshori", emailTo = EMAIL_ANSHORI)
+            ContactWithEmail(name = "Rika Rachmawati", email = EMAIL_RIKA)
+            ContactWithEmail(name = "Mochammad Anshori", email = EMAIL_ANSHORI)
 
             Spacer(Modifier.height(8.dp))
             Divider()
@@ -157,13 +159,20 @@ fun AboutScreen() {
 //                )
 //            }
 
+            // === Hubungi Kami ===
             Text(
                 "Hubungi Kami",
                 style = MaterialTheme.typography.bodyLarge,
+                color = ComposeColor.Black
+            )
+
+            Text(
+                text = "WhatsApp",
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier
-                    .padding(vertical = 8.dp)
-                    .clickable { openWhatsApp(context) } // Call the function to open WhatsApp
+                    .padding(vertical = 6.dp)
+                    .clickable { openWhatsApp(context) }
             )
 
             Spacer(Modifier.height(8.dp))
@@ -202,18 +211,30 @@ fun AboutScreen() {
 }
 
 @Composable
-private fun ContactNameOnly(name: String, emailTo: String) {
+fun ContactWithEmail(name: String, email: String) {
     val ctx = LocalContext.current
-    Text(
-        text = name,
-        style = MaterialTheme.typography.bodySmall.merge(
-            TextStyle(textDecoration = TextDecoration.Underline)
-        ),
-        color = MaterialTheme.colorScheme.primary,
+
+    Column(
         modifier = Modifier
             .padding(vertical = 6.dp)
-            .clickable { openEmail(ctx, emailTo) }
-    )
+    ) {
+        // Nama
+        Text(
+            text = name,
+            style = MaterialTheme.typography.bodySmall,
+            color = ComposeColor.Black
+        )
+
+        // Email (klik, tanpa underline)
+        Text(
+            text = email,
+            style = MaterialTheme.typography.bodySmall.copy(
+                fontWeight = FontWeight.Medium
+            ),
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.clickable { openEmail(ctx, email) }
+        )
+    }
 }
 
 private fun openEmail(context: android.content.Context, email: String) {
